@@ -1,0 +1,193 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+enum Role {
+  EMPLOYEE
+  MANAGER
+  ADMIN
+}
+
+enum GoalStatus {
+  DRAFT
+  SUBMITTED
+  APPROVED
+  RETURNED
+}
+
+enum UomType {
+  NUMERIC_MIN
+  NUMERIC_MAX
+  TIMELINE
+  ZERO
+}
+
+enum AchievementStatus {
+  NOT_STARTED
+  ON_TRACK
+  COMPLETED
+}
+
+enum Quarter {
+  Q1
+  Q2
+  Q3
+  Q4
+}
+
+enum CyclePhase {
+  GOAL_SETTING
+  Q1_CHECKIN
+  Q2_CHECKIN
+  Q3_CHECKIN
+  Q4_ANNUAL
+}
+
+model User {
+  id           String   @id @default(uuid())
+  name         String
+  email        String   @unique
+  passwordHash String
+  role         Role
+  department   String?
+  managerId    String?
+  manager      User?    @relation("ManagerReports", fields: [managerId], references: [id])
+  reports      User[]   @relation("ManagerReports")
+
+  goals            Goal[]
+  approvals        GoalApproval[]
+  checkinComments  CheckinComment[]
+  auditLogs        AuditLog[]       @relation("AuditChangedBy")
+  escalationsTarget Escalation[]    @relation("EscalationTarget")
+
+  createdAt DateTime @default(now())
+}
+
+model Cycle {
+  id        String      @id @default(uuid())
+  name      String
+  phase     CyclePhase  @default(GOAL_SETTING)
+  phases    CyclePhaseDate[]
+  goals     Goal[]
+  isActive  Boolean     @default(true)
+  createdAt DateTime    @default(now())
+}
+
+model CyclePhaseDate {
+  id        String     @id @default(uuid())
+  cycleId   String
+  cycle     Cycle      @relation(fields: [cycleId], references: [id], onDelete: Cascade)
+  phase     CyclePhase
+  openDate  DateTime
+  closeDate DateTime
+
+  @@unique([cycleId, phase])
+}
+
+model Goal {
+  id          String     @id @default(uuid())
+  userId      String
+  user        User       @relation(fields: [userId], references: [id])
+  cycleId     String
+  cycle       Cycle      @relation(fields: [cycleId], references: [id])
+
+  thrustArea  String
+  title       String
+  description String?
+  uomType     UomType
+  target      Float
+  targetDate  DateTime?
+  weightage   Float
+  status      GoalStatus @default(DRAFT)
+  locked      Boolean    @default(false)
+
+  isShared        Boolean    @default(false)
+  sourceGoalId    String?
+  sourceGoal      Goal?      @relation("SharedGoalLink", fields: [sourceGoalId], references: [id])
+  sharedCopies    Goal[]     @relation("SharedGoalLink")
+
+  approvals       GoalApproval[]
+  achievements    Achievement[]
+  checkinComments CheckinComment[]
+  auditLogs       AuditLog[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model GoalApproval {
+  id        String   @id @default(uuid())
+  goalId    String
+  goal      Goal     @relation(fields: [goalId], references: [id], onDelete: Cascade)
+  managerId String
+  manager   User     @relation(fields: [managerId], references: [id])
+  action    String
+  comment   String?
+  timestamp DateTime @default(now())
+}
+
+model Achievement {
+  id          String            @id @default(uuid())
+  goalId      String
+  goal        Goal              @relation(fields: [goalId], references: [id], onDelete: Cascade)
+  quarter     Quarter
+  actualValue Float?
+  actualDate  DateTime?
+  status      AchievementStatus @default(NOT_STARTED)
+  score       Float?
+  updatedAt   DateTime          @updatedAt
+  createdAt   DateTime          @default(now())
+
+  @@unique([goalId, quarter])
+}
+
+model CheckinComment {
+  id        String   @id @default(uuid())
+  goalId    String
+  goal      Goal     @relation(fields: [goalId], references: [id], onDelete: Cascade)
+  managerId String
+  manager   User     @relation(fields: [managerId], references: [id])
+  quarter   Quarter
+  comment   String
+  timestamp DateTime @default(now())
+}
+
+model AuditLog {
+  id           String   @id @default(uuid())
+  goalId       String
+  goal         Goal     @relation(fields: [goalId], references: [id], onDelete: Cascade)
+  changedById  String
+  changedBy    User     @relation("AuditChangedBy", fields: [changedById], references: [id])
+  fieldChanged String
+  oldValue     String?
+  newValue     String?
+  timestamp    DateTime @default(now())
+}
+
+model Escalation {
+  id           String    @id @default(uuid())
+  ruleType     String
+  targetUserId String
+  targetUser   User      @relation("EscalationTarget", fields: [targetUserId], references: [id])
+  triggeredAt  DateTime  @default(now())
+  resolvedAt   DateTime?
+  status       String    @default("OPEN")
+}
+
+model EscalationRule {
+  id         String @id @default(uuid())
+  ruleType   String
+  daysAfter  Int
+  notifyRole Role
+}
+
+model ThrustArea {
+  id   String @id @default(uuid())
+  name String @unique
+}
